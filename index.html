@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masook Puskesmas AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Library Inti: Face-API, Crypto-JS, Google Fonts -->
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f0f4f8; overflow-x: hidden; user-select: none; }
+        
+        /* Area Kamera Lingkaran Sempurna */
+        .circular-cam {
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 4px solid #3b82f6;
+            position: relative;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 25px rgba(59, 130, 246, 0.4);
+        }
+
+        /* Laser Scanning Line - Hijau Neon */
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: #22c55e;
+            box-shadow: 0 0 15px #22c55e, 0 0 5px #fff;
+            animation: scan 2.5s infinite ease-in-out;
+            z-index: 20;
+        }
+
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        /* Holographic Grid Overlay */
+        .hologram {
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(59, 130, 246, 0.15) 1px, transparent 1px);
+            background-size: 15px 15px;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* Face-Lock Glow Pulse */
+        .pulse-green { border-color: #10b981 !important; box-shadow: 0 0 45px rgba(16, 185, 129, 0.6) !important; }
+        .pulse-red { border-color: #ef4444 !important; box-shadow: 0 0 45px rgba(239, 68, 68, 0.4) !important; }
+
+        /* Skeleton Loading Shimmer */
+        .shimmer {
+            background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+            background-size: 200% 100%;
+            animation: shimmer-move 1.5s infinite linear;
+        }
+        @keyframes shimmer-move { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+        /* Pop-up Bounce Animation */
+        .status-popup { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes bounceIn { 0% { transform: scale(0); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+        /* Smooth Slide Up */
+        .slide-up { animation: slideUp 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        
+        /* Interactive Feedback */
+        .active-scale { transition: transform 0.1s; }
+        .active-scale:active { transform: scale(0.95); }
+
+        .hidden { display: none !important; }
+
+        /* Manual Toggle Button Styling */
+        .cam-toggle-btn {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            z-index: 40;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .cam-toggle-btn.off { background: rgba(239, 68, 68, 0.5); }
+
+        /* Mode Selector Switch */
+        .mode-switch {
+            display: flex;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 99px;
+            width: fit-content;
+            margin: 0 auto;
+        }
+        .mode-btn {
+            padding: 8px 24px;
+            border-radius: 99px;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            color: #64748b;
+        }
+        .mode-btn.active {
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="pb-24">
+
+    <!-- Audio Elements -->
+    <audio id="snd-success" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+    <audio id="snd-error" src="https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3" preload="auto"></audio>
+    <audio id="snd-warning" src="https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3" preload="auto"></audio>
+
+    <!-- Overlay Hasil Validasi -->
+    <div id="result-overlay" class="hidden fixed inset-0 z-[200] flex items-center justify-center bg-white/95 backdrop-blur-lg p-8 text-center">
+        <div class="status-popup max-w-sm">
+            <div id="result-icon" class="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center text-white text-4xl shadow-lg"></div>
+            <h2 id="result-title" class="font-black text-2xl text-gray-900 mb-2">-</h2>
+            <p id="result-message" class="text-gray-500 text-sm mb-8 leading-relaxed">-</p>
+            <p class="text-[9px] text-gray-300 font-black uppercase mb-4 tracking-widest italic">Masook Security Engine v3.5</p>
+            <button onclick="closeOverlay()" class="w-full bg-slate-900 text-white py-4 rounded-3xl font-black text-xs uppercase tracking-widest active-scale">KEMBALI KE MENU</button>
+        </div>
+    </div>
+
+    <!-- Header UI -->
+    <header class="bg-blue-600 text-white p-6 text-center shadow-lg sticky top-0 z-50">
+        <div class="flex items-center justify-center gap-2">
+            <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse"></div>
+            <h1 class="font-black text-xl tracking-tighter uppercase">Masook Puskesmas</h1>
+        </div>
+        <p class="text-[9px] opacity-80 uppercase font-black tracking-widest mt-1">Sistem Presensi Pegawai</p>
+    </header>
+
+    <!-- Konten Utama -->
+    <main class="max-w-md mx-auto p-4 space-y-6">
+
+        <!-- MODE SELECTOR (DYNAMIC HOURS) -->
+        <div id="mode-selector-container" class="view">
+            <div class="mode-switch">
+                <button id="mode-masuk" onclick="setPresensiType('MASUK')" class="mode-btn active">Masuk</button>
+                <button id="mode-pulang" onclick="setPresensiType('PULANG')" class="mode-btn">Pulang</button>
+            </div>
+        </div>
+
+        <!-- AREA KAMERA / PEMINDAI -->
+        <div id="camera-area" class="flex flex-col items-center pt-2">
+            <div id="cam-container" class="circular-cam relative">
+                <!-- Tombol Manual Toggle -->
+                <div id="manual-cam-toggle" class="cam-toggle-btn hidden" onclick="toggleCameraManual()">
+                    <span id="cam-toggle-icon">📷</span>
+                </div>
+
+                <div id="camera-off-msg" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-8 text-center z-30">
+                    <span id="placeholder-icon" class="text-5xl mb-4">📍</span>
+                    <p id="placeholder-text" class="text-[10px] font-black uppercase leading-relaxed tracking-[0.2em]">Memvalidasi Lokasi...</p>
+                    <button id="btn-re-activate" class="hidden mt-4 bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest active-scale">Aktifkan Kamera</button>
+                </div>
+                
+                <div class="hologram"></div>
+                <div id="scan-line" class="scan-line hidden"></div>
+                <video id="video" autoplay muted playsinline class="w-full h-full object-cover hidden scale-x-[-1]"></video>
+                <canvas id="overlay" class="absolute top-0 left-0 z-10"></canvas>
+            </div>
+        </div>
+
+        <!-- TAMPILAN PROFIL -->
+        <div id="profile-area" class="hidden slide-up flex flex-col items-center">
+            <div class="w-full bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-gray-100">
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-800 p-10 text-center text-white relative">
+                    <div class="w-28 h-28 bg-white/20 backdrop-blur-xl rounded-full mx-auto flex items-center justify-center text-6xl mb-4 border-4 border-white/30 shadow-inner">👤</div>
+                    <h2 id="prof-nama" class="font-black text-2xl uppercase tracking-tight">-</h2>
+                    <p id="prof-nip" class="text-sm opacity-80 font-bold tracking-widest mt-1">NIP: -</p>
+                </div>
+                <div class="p-10 space-y-6">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-[10px] font-black uppercase tracking-widest">Akurasi Wajah</span>
+                        <span class="font-black text-blue-600 uppercase text-lg tracking-tighter">> 10%</span>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-gray-50 pt-5">
+                        <span class="text-gray-400 text-[10px] font-black uppercase tracking-widest">Status Terverifikasi</span>
+                        <span id="prof-status" class="font-black text-green-500 uppercase text-lg tracking-tighter">-</span>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-gray-50 pt-5">
+                        <span class="text-gray-400 text-[10px] font-black uppercase tracking-widest">Waktu Presensi</span>
+                        <span id="prof-waktu" class="font-bold text-gray-800 text-lg">-</span>
+                    </div>
+                    <button onclick="resetToCamera()" class="w-full mt-6 bg-slate-50 hover:bg-slate-100 text-slate-400 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active-scale">TUTUP PROFIL</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: ABSENSI -->
+        <section id="view-absensi" class="view">
+            <div id="status-card" class="w-full bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 text-center">
+                <p id="msg-instruction" class="text-gray-400 text-[9px] font-black uppercase tracking-[0.3em] mb-3">Inisialisasi Sistem...</p>
+                <h2 id="user-detected" class="font-black text-3xl text-blue-900 tracking-tighter">-</h2>
+                <div class="flex items-center justify-center gap-2 mt-5">
+                    <span id="location-status" class="text-[9px] bg-red-100 text-red-600 px-4 py-2 rounded-full font-black uppercase tracking-widest border border-red-200">Menunggu GPS</span>
+                </div>
+                <button id="btn-absen" disabled class="mt-10 w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] shadow-xl shadow-blue-100 opacity-50 cursor-not-allowed active-scale transition-all">
+                    PRESENSI SEKARANG
+                </button>
+            </div>
+
+            <div class="mt-12">
+                <h3 class="font-black text-[10px] text-gray-400 uppercase tracking-[0.3em] mb-5 flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 bg-blue-600 rounded-full"></div> Aktivitas Hari Ini
+                </h3>
+                <div id="history-list" class="space-y-4">
+                    <div class="shimmer h-24 rounded-[2rem] w-full"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW: REGISTRASI -->
+        <section id="view-registrasi" class="view hidden">
+            <div class="bg-white p-8 rounded-[3rem] shadow-sm space-y-8">
+                <div class="text-center">
+                    <h2 class="font-black text-2xl text-slate-900 tracking-tighter uppercase">Pendaftaran Wajah</h2>
+                    <p class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Validasi Database Pegawai Sah</p>
+                </div>
+                <div class="space-y-5">
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-black text-slate-400 uppercase ml-4">Nomor Induk Pegawai (NIP)</label>
+                        <input type="text" id="reg-nip" placeholder="Contoh: 198..." class="w-full bg-slate-50 border-none px-6 py-4 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-black text-slate-400 uppercase ml-4">Nama Lengkap</label>
+                        <input type="text" id="reg-nama" placeholder="Tanpa Gelar" class="w-full bg-slate-50 border-none px-6 py-4 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    </div>
+                    <div class="bg-amber-50 border border-amber-100 p-4 rounded-2xl">
+                        <p class="text-[9px] text-amber-700 font-bold uppercase leading-relaxed">Info: NIP Anda harus terdaftar di tab 'Daftar_Pegawai_Sah' agar proses ini diizinkan.</p>
+                    </div>
+                    <button id="btn-capture-reg" class="w-full bg-indigo-600 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-widest active-scale shadow-lg shadow-indigo-100 transition-all">DAFTARKAN WAJAH</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW: ADMIN -->
+        <section id="view-admin" class="view hidden">
+             <h2 class="font-black text-xl mb-6 text-slate-900 uppercase tracking-widest italic tracking-tighter">Laporan Kehadiran</h2>
+             <div id="admin-logs" class="space-y-4"></div>
+        </section>
+
+    </main>
+
+    <!-- Navigasi Bawah -->
+    <nav class="fixed bottom-6 left-6 right-6 bg-white/80 backdrop-blur-xl border border-white/50 flex justify-around p-4 rounded-[2.5rem] shadow-2xl z-50">
+        <button onclick="switchView('absensi')" class="nav-btn flex flex-col items-center text-blue-600 transition-all active-scale">
+            <span class="text-2xl mb-1">🎯</span>
+            <span class="text-[8px] font-black uppercase tracking-widest">Absen</span>
+        </button>
+        <button onclick="switchView('registrasi')" class="nav-btn flex flex-col items-center text-slate-400 transition-all active-scale">
+            <span class="text-2xl mb-1">➕</span>
+            <span class="text-[8px] font-black uppercase tracking-widest">Daftar</span>
+        </button>
+        <button onclick="switchView('admin')" class="nav-btn flex flex-col items-center text-slate-400 transition-all active-scale">
+            <span class="text-2xl mb-1">📂</span>
+            <span class="text-[8px] font-black uppercase tracking-widest">Laporan</span>
+        </button>
+    </nav>
+
+    <script>
+        // CONFIGURATION
+        const API_URL = "https://script.google.com/macros/s/AKfycbzHHaHNY3KKqftUB4DkSKof4uG15dRl61AHqURfpUMpui9npiAfY6J6jURHc4n0QJXO/exec"; 
+        
+        let labeledDescriptors = [], 
+            isGpsLocked = true, 
+            currentDetectedUser = null, 
+            userDataList = [], 
+            isModelLoaded = false, 
+            cameraStream = null, 
+            currentView = 'absensi',
+            autoSleepTimer = null,
+            isManualOff = false,
+            presensiType = 'MASUK';
+
+        // 1. INISIALISASI
+        window.onload = async () => {
+            await loadModels();
+            await fetchPegawaiData();
+            initGPS();
+            loadLocalHistory();
+            initVisibilityHandler();
+            initPWA();
+            
+            document.getElementById('btn-re-activate').onclick = () => {
+                isManualOff = false;
+                startCamera();
+            };
+        };
+
+        // PWA Push Notifications
+        async function initPWA() {
+            if ("serviceWorker" in navigator) {
+                try {
+                    const swCode = `
+                        self.addEventListener('install', e => self.skipWaiting());
+                        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+                        self.addEventListener('message', e => {
+                            if (e.data.action === 'schedule-notify') {
+                                setInterval(() => {
+                                    const now = new Date();
+                                    const time = now.getHours() + ":" + now.getMinutes().toString().padStart(2, '0');
+                                    if (time === "07:15") self.registration.showNotification("Masook AI", { body: "Jangan lupa presensi masuk!", icon: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
+                                    if (time === "15:00") self.registration.showNotification("Masook AI", { body: "Sudah jam pulang! Jangan lupa absen.", icon: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
+                                }, 60000);
+                            }
+                        });
+                    `;
+                    const blob = new Blob([swCode], { type: "application/javascript" });
+                    const registration = await navigator.serviceWorker.register(URL.createObjectURL(blob));
+                    if (Notification.permission === "default") await Notification.requestPermission();
+                    if (registration.active) registration.active.postMessage({ action: 'schedule-notify' });
+                } catch (e) { console.warn("PWA Init failed"); }
+            }
+        }
+
+        function setPresensiType(type) {
+            presensiType = type;
+            document.getElementById('mode-masuk').classList.toggle('active', type === 'MASUK');
+            document.getElementById('mode-pulang').classList.toggle('active', type === 'PULANG');
+            document.getElementById('btn-absen').innerText = "PRESENSI " + type;
+            document.getElementById('btn-absen').classList.toggle('bg-blue-600', type === 'MASUK');
+            document.getElementById('btn-absen').classList.toggle('bg-indigo-600', type === 'PULANG');
+        }
+
+        function initVisibilityHandler() {
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === 'hidden') stopCamera();
+                else if (!isGpsLocked && !isManualOff && currentView === 'absensi') startCamera();
+            });
+        }
+
+        async function loadModels() {
+            try {
+                const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+                isModelLoaded = true;
+                document.getElementById('status-dot').classList.replace('bg-red-400', 'bg-blue-400');
+            } catch (err) { showToast("AI Offline."); }
+        }
+
+        async function startCamera() {
+            if (cameraStream || isGpsLocked || isManualOff) return;
+            const video = document.getElementById('video');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 640, facingMode: "user" } });
+                cameraStream = stream;
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                document.getElementById('camera-off-msg').classList.add('hidden');
+                document.getElementById('scan-line').classList.remove('hidden');
+                document.getElementById('manual-cam-toggle').classList.remove('hidden', 'off');
+                document.getElementById('cam-toggle-icon').innerText = "📷";
+                resetAutoSleepTimer();
+                detectFaceLoop();
+                return true;
+            } catch (e) { showToast("Izin Kamera Diperlukan."); return false; }
+        }
+
+        function stopCamera() {
+            if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; }
+            document.getElementById('video').classList.add('hidden');
+            document.getElementById('camera-off-msg').classList.remove('hidden');
+            document.getElementById('scan-line').classList.add('hidden');
+            document.getElementById('cam-container').classList.remove('pulse-green', 'pulse-red');
+            document.getElementById('manual-cam-toggle').classList.add('off');
+            document.getElementById('cam-toggle-icon').innerText = "❌";
+            if (autoSleepTimer) clearTimeout(autoSleepTimer);
+        }
+
+        function toggleCameraManual() {
+            if (cameraStream) { isManualOff = true; stopCamera(); document.getElementById('placeholder-text').innerText = "Kamera Dimatikan Manual"; document.getElementById('btn-re-activate').classList.remove('hidden'); }
+            else { isManualOff = false; if (!isGpsLocked) { startCamera(); document.getElementById('btn-re-activate').classList.add('hidden'); } else showToast("Di luar radius."); }
+        }
+
+        function resetAutoSleepTimer() {
+            if (autoSleepTimer) clearTimeout(autoSleepTimer);
+            autoSleepTimer = setTimeout(() => {
+                if (cameraStream) {
+                    stopCamera();
+                    document.getElementById('placeholder-text').innerText = "Kamera Nonaktif (Hemat Baterai)";
+                    document.getElementById('placeholder-icon').innerText = "💤";
+                    document.getElementById('btn-re-activate').classList.remove('hidden');
+                }
+            }, 120000); 
+        }
+
+        async function detectFaceLoop() {
+            const video = document.getElementById('video');
+            const camContainer = document.getElementById('cam-container');
+            const intervalId = setInterval(async () => {
+                if (!cameraStream || currentView !== 'absensi') { clearInterval(intervalId); return; }
+                if (!isModelLoaded || labeledDescriptors.length === 0) return;
+
+                const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                
+                if (detections) {
+                    resetAutoSleepTimer();
+                    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.9); 
+                    const bestMatch = faceMatcher.findBestMatch(detections.descriptor);
+                    
+                    if (bestMatch.label !== 'unknown') {
+                        camContainer.classList.add('pulse-green'); camContainer.classList.remove('pulse-red');
+                        const user = userDataList.find(u => u.nip.toString() === bestMatch.label.toString());
+                        if (user && currentDetectedUser !== user.nip) {
+                            currentDetectedUser = user.nip;
+                            document.getElementById('user-detected').innerText = user.nama;
+                            document.getElementById('msg-instruction').innerText = "WAJAH TERIDENTIFIKASI (>10%)";
+                            speak(`Selamat datang ${user.nama.split(' ')[0]}`);
+                            if(!isGpsLocked) unlockAbsenBtn();
+                        }
+                    } else {
+                        camContainer.classList.add('pulse-red'); camContainer.classList.remove('pulse-green');
+                        resetDetectionUI();
+                    }
+                } else { camContainer.classList.remove('pulse-green', 'pulse-red'); resetDetectionUI(); }
+            }, 800);
+        }
+
+        function resetDetectionUI() {
+            currentDetectedUser = null;
+            document.getElementById('user-detected').innerText = "-";
+            document.getElementById('msg-instruction').innerText = "MENUNGGU PEMINDAIAN...";
+            const btn = document.getElementById('btn-absen');
+            btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        function unlockAbsenBtn() {
+            const btn = document.getElementById('btn-absen');
+            btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        function initGPS() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(pos => {
+                    const badge = document.getElementById('location-status');
+                    badge.innerText = "LOKASI VALID 📍"; badge.classList.replace('bg-red-100', 'bg-green-100'); badge.classList.replace('text-red-600', 'text-green-600');
+                    isGpsLocked = false;
+                    document.getElementById('status-dot').classList.replace('bg-blue-400', 'bg-green-400');
+                    if (currentView === 'absensi' && !isManualOff) startCamera();
+                }, err => { 
+                    isGpsLocked = true; 
+                    document.getElementById('placeholder-text').innerText = "Di luar radius kantor.";
+                    document.getElementById('status-dot').classList.replace('bg-green-400', 'bg-red-400');
+                    stopCamera();
+                }, { enableHighAccuracy: true });
+            }
+        }
+
+        async function fetchPegawaiData() {
+            try {
+                const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "get_pegawai" }) });
+                const data = await response.json();
+                if (data && Array.isArray(data)) {
+                    userDataList = data;
+                    labeledDescriptors = data.map(d => {
+                        try { return new faceapi.LabeledFaceDescriptors(d.nip.toString(), [new Float32Array(JSON.parse(atob(d.descriptor)))]); } catch(e) { return null; }
+                    }).filter(d => d !== null);
+                }
+            } catch (e) { console.error("Cloud Error"); }
+        }
+
+        document.getElementById('btn-absen').onclick = async () => {
+            const user = userDataList.find(u => u.nip === currentDetectedUser);
+            if (!user) return;
+            const btn = document.getElementById('btn-absen');
+            btn.disabled = true; 
+            
+            let count = 0;
+            const interval = setInterval(() => { btn.innerText = "VALIDASI" + ".".repeat((count % 3) + 1); count++; }, 400);
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const payload = { 
+                    action: "absensi", 
+                    type: presensiType, 
+                    nip: user.nip, 
+                    nama: user.nama, 
+                    lat: pos.coords.latitude, 
+                    lng: pos.coords.longitude 
+                };
+                try {
+                    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                    const result = await res.json();
+                    clearInterval(interval);
+                    
+                    if (result.status === "success") {
+                        playAudio('success');
+                        if (result.statusWaktu === "TERLAMBAT") playAudio('late');
+                        showStatusOverlay("SAH", "Berhasil", result.message, "bg-green-500");
+                        saveToLocalHistory(user.nama, result.statusWaktu);
+                        showUserProfile(user, result.statusWaktu);
+                    } else {
+                        playAudio('error');
+                        showStatusOverlay("GAGAL", "Ditolak", result.message, "bg-red-500");
+                    }
+                } catch (e) { clearInterval(interval); showToast("Koneksi Error."); }
+                btn.innerText = "PRESENSI " + presensiType;
+            });
+        };
+
+        document.getElementById('btn-capture-reg').onclick = async () => {
+            const nip = document.getElementById('reg-nip').value, nama = document.getElementById('reg-nama').value;
+            if (!nip || !nama) return alert("Isi NIP & Nama!");
+            const btn = document.getElementById('btn-capture-reg'); btn.innerText = "MEMBUKA KAMERA..."; btn.disabled = true;
+            const camOk = await startCamera();
+            if (!camOk) { btn.disabled = false; return; }
+            
+            setTimeout(async () => {
+                const video = document.getElementById('video');
+                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                if (!detection) { alert("Wajah tidak fokus."); btn.disabled = false; return; }
+                const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "register", nip, nama, faceDescriptor: btoa(JSON.stringify(Array.from(detection.descriptor))) }) });
+                const result = await res.json();
+                if (result.status === "success") { playAudio('success'); alert(result.message); location.reload(); }
+                else { playAudio('error'); alert(result.message); btn.disabled = false; stopCamera(); }
+            }, 2500);
+        };
+
+        function playAudio(type) {
+            const success = document.getElementById('snd-success'), error = document.getElementById('snd-error'), late = document.getElementById('snd-warning');
+            if (type === 'success') success.play().catch(e => {});
+            if (type === 'error') error.play().catch(e => {});
+            if (type === 'late') setTimeout(() => late.play().catch(e => {}), 1500);
+        }
+
+        function showStatusOverlay(type, title, msg, color) {
+            const overlay = document.getElementById('result-overlay'), icon = document.getElementById('result-icon');
+            overlay.classList.remove('hidden');
+            icon.className = `w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center text-white text-4xl shadow-lg ${color}`;
+            icon.innerHTML = type === "SAH" ? "✓" : "✕";
+            document.getElementById('result-title').innerText = title; document.getElementById('result-message').innerText = msg;
+        }
+
+        function closeOverlay() { document.getElementById('result-overlay').classList.add('hidden'); }
+
+        function showUserProfile(user, status) {
+            stopCamera(); document.getElementById('camera-area').classList.add('hidden'); document.getElementById('view-absensi').classList.add('hidden');
+            document.getElementById('mode-selector-container').classList.add('hidden');
+            document.getElementById('prof-nama').innerText = user.nama; document.getElementById('prof-nip').innerText = "NIP: " + user.nip;
+            document.getElementById('prof-status').innerText = status; document.getElementById('prof-waktu').innerText = new Date().toLocaleTimeString('id-ID');
+            document.getElementById('profile-area').classList.remove('hidden');
+        }
+
+        function resetToCamera() {
+            document.getElementById('profile-area').classList.add('hidden'); document.getElementById('camera-area').classList.remove('hidden');
+            document.getElementById('view-absensi').classList.remove('hidden'); 
+            document.getElementById('mode-selector-container').classList.remove('hidden');
+            resetDetectionUI(); if (!isGpsLocked && !isManualOff) startCamera();
+        }
+
+        function switchView(viewId) {
+            currentView = viewId;
+            document.getElementById('profile-area').classList.add('hidden');
+            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+            document.getElementById('view-' + viewId).classList.remove('hidden');
+            if (viewId === 'absensi') {
+                document.getElementById('mode-selector-container').classList.remove('hidden');
+                if (!isGpsLocked && !isManualOff) startCamera(); else stopCamera();
+            } else {
+                document.getElementById('mode-selector-container').classList.add('hidden');
+                stopCamera();
+            }
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.replace('text-blue-600', 'text-slate-400'));
+            event.currentTarget.classList.replace('text-slate-400', 'text-blue-600');
+            if(viewId === 'admin') fetchAdminLogs();
+        }
+
+        async function fetchAdminLogs() {
+            const container = document.getElementById('admin-logs');
+            container.innerHTML = '<div class="shimmer h-16 rounded-2xl w-full"></div>'.repeat(3);
+            try {
+                const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "get_logs" }) });
+                const logs = await res.json();
+                container.innerHTML = logs.slice(1, 15).map(log => `
+                    <div class="bg-white p-5 rounded-2xl flex justify-between items-center shadow-sm slide-up border border-slate-50">
+                        <div><p class="font-black text-slate-900 text-sm tracking-tighter">${log[3]}</p><p class="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-widest">${log[0]} | ${log[1]}</p></div>
+                        <div class="text-right">
+                            <span class="text-[9px] font-black uppercase italic ${log[4] === 'TEPAT WAKTU' || log[4] === 'PULANG' ? 'text-green-500' : 'text-red-500'}">${log[4]}</span>
+                            <p class="text-[8px] text-slate-300 font-bold uppercase">${log[5]}</p>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) { container.innerHTML = "<p class='text-center py-10'>Error</p>"; }
+        }
+
+        function loadLocalHistory() {
+            const list = document.getElementById('history-list');
+            const history = JSON.parse(localStorage.getItem('user_history') || "[]");
+            if(history.length === 0) { list.innerHTML = "<p class='text-center py-10 text-[9px] font-black uppercase tracking-[0.3em] opacity-30'>Log Kosong</p>"; return; }
+            list.innerHTML = history.map(h => `
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border-l-4 ${h.status === 'TEPAT WAKTU' || h.status === 'PULANG' ? 'border-green-400' : 'border-red-400'} flex justify-between items-center slide-up">
+                    <div><p class="text-slate-300 text-[10px] font-black tracking-widest mb-1 uppercase">${h.time}</p><p class="font-black text-slate-800 text-sm tracking-tight">${h.nama}</p></div>
+                    <span class="text-[8px] font-black uppercase px-3 py-1.5 rounded-full border ${h.status === 'TEPAT WAKTU' || h.status === 'PULANG' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}">${h.status}</span>
+                </div>
+            `).join('');
+        }
+
+        function saveToLocalHistory(nama, status) {
+            let h = JSON.parse(localStorage.getItem('user_history') || "[]");
+            h.unshift({ nama, status, time: new Date().toLocaleTimeString('id-ID') });
+            localStorage.setItem('user_history', JSON.stringify(h.slice(0, 5))); loadLocalHistory();
+        }
+
+        function speak(text) { if ('speechSynthesis' in window) { const ut = new SpeechSynthesisUtterance(text); ut.lang = 'id-ID'; window.speechSynthesis.speak(ut); } }
+        function showToast(msg) { const t = document.createElement('div'); t.className = "fixed bottom-28 left-8 right-8 bg-slate-900 text-white p-4 rounded-2xl text-[9px] font-black uppercase tracking-widest z-[100] text-center shadow-2xl"; t.innerText = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+    </script>
+</body>
+</html>
